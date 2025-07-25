@@ -1,30 +1,35 @@
-// index.js (versão atualizada com play-dl)
+// index.js (versão atualizada com headers)
 
 const express = require('express');
 const play = require('play-dl');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware para permitir requisições de outras origens (CORS)
+// IMPORTANTE: Adicione o user-agent do YouTube
+// Isso ajuda a "camuflar" a requisição
+play.setToken({
+  youtube : {
+    cookie : process.env.YOUTUBE_COOKIE // Carrega o cookie de uma variável de ambiente
+  }
+})
+
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   next();
 });
 
 app.get('/', (req, res) => {
-  res.send('API de Download do YouTube está no ar! Use as rotas /info, /download, ou /mp3.');
+  res.send('API de Download do YouTube está no ar!');
 });
 
-// Rota para obter informações do vídeo
+// A rota /info permanece a mesma
 app.get('/info', async (req, res) => {
   const youtubeUrl = req.query.url;
   if (!youtubeUrl || !play.validate(youtubeUrl)) {
     return res.status(400).send({ error: 'URL do YouTube inválida ou não fornecida.' });
   }
-
   try {
     const videoInfo = await play.video_info(youtubeUrl);
-    // Enviamos apenas os detalhes que nosso front-end precisa
     res.json({ 
       videoDetails: {
         title: videoInfo.video_details.title,
@@ -34,51 +39,40 @@ app.get('/info', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao buscar informações do vídeo:', error.message);
-    res.status(500).send({ error: 'Falha ao buscar informações do vídeo.' });
+    res.status(500).send({ error: 'Falha ao buscar informações do vídeo. O YouTube pode ter bloqueado esta requisição.' });
   }
 });
 
-// Rota para baixar o vídeo (MP4)
+// A rota /download permanece a mesma
 app.get('/download', async (req, res) => {
   const youtubeUrl = req.query.url;
   if (!youtubeUrl || !play.validate(youtubeUrl)) {
     return res.status(400).send({ error: 'URL do YouTube inválida ou não fornecida.' });
   }
-
   try {
     const videoInfo = await play.video_info(youtubeUrl);
-    const title = videoInfo.video_details.title.replace(/[<>:"/\\|?*]+/g, ''); // Remove caracteres inválidos
-
+    const title = videoInfo.video_details.title.replace(/[<>:"/\\|?*]+/g, '');
     const stream = await play.stream(youtubeUrl);
-    
     res.setHeader('Content-Disposition', `attachment; filename="${title}.mp4"`);
     stream.stream.pipe(res);
-
   } catch (error) {
     console.error('Erro no download do vídeo:', error.message);
     res.status(500).send({ error: 'Falha ao baixar o vídeo.' });
   }
 });
 
-// Rota para baixar apenas o áudio (MP3)
+// A rota /mp3 permanece a mesma
 app.get('/mp3', async (req, res) => {
   const youtubeUrl = req.query.url;
   if (!youtubeUrl || !play.validate(youtubeUrl)) {
     return res.status(400).send({ error: 'URL do YouTube inválida ou não fornecida.' });
   }
-
   try {
     const videoInfo = await play.video_info(youtubeUrl);
-    const title = videoInfo.video_details.title.replace(/[<>:"/\\|?*]+/g, ''); // Remove caracteres inválidos
-
-    // A play-dl baixa o áudio de melhor qualidade disponível (geralmente .webm ou .m4a)
-    const stream = await play.stream(youtubeUrl, {
-      quality: 2 // Prioriza streams de áudio
-    });
-
+    const title = videoInfo.video_details.title.replace(/[<>:"/\\|?*]+/g, '');
+    const stream = await play.stream(youtubeUrl, { quality: 2 });
     res.setHeader('Content-Disposition', `attachment; filename="${title}.mp3"`);
     stream.stream.pipe(res);
-
   } catch (error) {
     console.error('Erro no download do áudio:', error.message);
     res.status(500).send({ error: 'Falha ao baixar o áudio.' });
