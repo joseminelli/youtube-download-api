@@ -1,90 +1,90 @@
-const express = require("express");
-const ytdl = require("ytdl-core");
-const cors = require("cors");
+// index.js (versão atualizada com play-dl)
 
+const express = require('express');
+const play = require('play-dl');
 const app = express();
-app.use(cors());
+const PORT = process.env.PORT || 3000;
 
-app.get("/", (req, res) => {
-    const ping = new Date();
-    ping.setHours(ping.getHours() - 3);
-    console.log(
-        `Ping at: ${ping.getUTCHours()}:${ping.getUTCMinutes()}:${ping.getUTCSeconds()}`
-    );
-    res.sendStatus(200);
+// Middleware para permitir requisições de outras origens (CORS)
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  next();
 });
 
-app.get("/info", async (req, res) => {
-    const { url } = req.query;
-
-    if (url) {
-        const isValid = ytdl.validateURL(url);
-
-        if (isValid) {
-            const info = (await ytdl.getInfo(url)).videoDetails;
-
-            const title = info.title;
-            const thumbnail = info.thumbnails[2].url;
-
-            res.send({ title: title, thumbnail: thumbnail });
-        } else {
-            res.status(400).send("Invalid url");
-        }
-    } else {
-        res.status(400).send("Invalid query");
-    }
+app.get('/', (req, res) => {
+  res.send('API de Download do YouTube está no ar! Use as rotas /info, /download, ou /mp3.');
 });
 
-app.get("/mp3", async (req, res) => {
-    const { url } = req.query;
+// Rota para obter informações do vídeo
+app.get('/info', async (req, res) => {
+  const youtubeUrl = req.query.url;
+  if (!youtubeUrl || !play.validate(youtubeUrl)) {
+    return res.status(400).send({ error: 'URL do YouTube inválida ou não fornecida.' });
+  }
 
-    if (url) {
-        const isValid = ytdl.validateURL(url);
-
-        if (isValid) {
-            const videoName = (await ytdl.getInfo(url)).videoDetails.title;
-
-            res.header(
-                "Content-Disposition",
-                `attachment; filename="${videoName}.mp3"`
-            );
-            res.header("Content-type", "audio/mpeg3");
-
-            ytdl(url, { quality: "highestaudio", format: "mp3" }).pipe(res);
-        } else {
-            res.status(400).send("Invalid url");
-        }
-    } else {
-        res.status(400).send("Invalid query");
-    }
+  try {
+    const videoInfo = await play.video_info(youtubeUrl);
+    // Enviamos apenas os detalhes que nosso front-end precisa
+    res.json({ 
+      videoDetails: {
+        title: videoInfo.video_details.title,
+        duration: videoInfo.video_details.durationInSec,
+        thumbnails: videoInfo.video_details.thumbnails,
+      } 
+    });
+  } catch (error) {
+    console.error('Erro ao buscar informações do vídeo:', error.message);
+    res.status(500).send({ error: 'Falha ao buscar informações do vídeo.' });
+  }
 });
 
-app.get("/mp4", async (req, res) => {
-    const { url } = req.query;
+// Rota para baixar o vídeo (MP4)
+app.get('/download', async (req, res) => {
+  const youtubeUrl = req.query.url;
+  if (!youtubeUrl || !play.validate(youtubeUrl)) {
+    return res.status(400).send({ error: 'URL do YouTube inválida ou não fornecida.' });
+  }
 
-    if (url) {
-        const isValid = ytdl.validateURL(url);
+  try {
+    const videoInfo = await play.video_info(youtubeUrl);
+    const title = videoInfo.video_details.title.replace(/[<>:"/\\|?*]+/g, ''); // Remove caracteres inválidos
 
-        if (isValid) {
-            const videoName = (await ytdl.getInfo(url)).videoDetails.title;
+    const stream = await play.stream(youtubeUrl);
+    
+    res.setHeader('Content-Disposition', `attachment; filename="${title}.mp4"`);
+    stream.stream.pipe(res);
 
-            res.header(
-                "Content-Disposition",
-                `attachment; filename="${videoName}.mp4"`
-            );
-
-            ytdl(url, {
-                quality: "highest",
-                format: "mp4",
-            }).pipe(res);
-        } else {
-            res.status(400).send("Invalid url");
-        }
-    } else {
-        res.status(400).send("Invalid query");
-    }
+  } catch (error) {
+    console.error('Erro no download do vídeo:', error.message);
+    res.status(500).send({ error: 'Falha ao baixar o vídeo.' });
+  }
 });
 
-app.listen(process.env.PORT || 3500, () => {
-    console.log("Server on");
+// Rota para baixar apenas o áudio (MP3)
+app.get('/mp3', async (req, res) => {
+  const youtubeUrl = req.query.url;
+  if (!youtubeUrl || !play.validate(youtubeUrl)) {
+    return res.status(400).send({ error: 'URL do YouTube inválida ou não fornecida.' });
+  }
+
+  try {
+    const videoInfo = await play.video_info(youtubeUrl);
+    const title = videoInfo.video_details.title.replace(/[<>:"/\\|?*]+/g, ''); // Remove caracteres inválidos
+
+    // A play-dl baixa o áudio de melhor qualidade disponível (geralmente .webm ou .m4a)
+    const stream = await play.stream(youtubeUrl, {
+      quality: 2 // Prioriza streams de áudio
+    });
+
+    res.setHeader('Content-Disposition', `attachment; filename="${title}.mp3"`);
+    stream.stream.pipe(res);
+
+  } catch (error) {
+    console.error('Erro no download do áudio:', error.message);
+    res.status(500).send({ error: 'Falha ao baixar o áudio.' });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
